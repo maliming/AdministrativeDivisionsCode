@@ -5,4 +5,12 @@
     <TargetFramework>netcoreapp2.0</TargetFramework>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Abp.EntityFrameworkCore" Version="3.3.0" />
+    <PackageReference Include="Abp.GeneralTree" Version="2.2.4" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="2.0.1" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="2.0.1" />
+    <PackageReference Include="MoreLinq" Version="2.9.0" />
+  </ItemGroup>
+
 </Project>
