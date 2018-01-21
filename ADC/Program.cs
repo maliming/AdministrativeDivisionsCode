@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Net.Http;
 using System.Reflection;
@@ -14,7 +15,8 @@ using Abp.Modules;
 using Abp.Threading;
 using Castle.MicroKernel.Registration;
 using Microsoft.EntityFrameworkCore;
-using MoreEnumerable = MoreLinq.MoreEnumerable;
+using Microsoft.EntityFrameworkCore.Design;
+using MoreLinq;
 
 namespace ADC
 {
@@ -38,23 +40,16 @@ namespace ADC
     }
 
     [DependsOn(typeof(AbpEntityFrameworkCoreModule), typeof(GeneralTreeModule))]
-    public class MyModule : AbpModule
+    public class RegionModule : AbpModule
     {
         public override void PreInitialize()
         {
-            //UseInMemoryDatabase
-            Configuration.UnitOfWork.IsTransactional = false;
-            var options = new DbContextOptionsBuilder<MyDbContext>()
-                .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
-                .Options;
-
-            /*
-            var options = new DbContextOptionsBuilder<MyDbContext>()
+            var options = new DbContextOptionsBuilder<RegionDbContext>()
                 .UseSqlServer("Server=.\\SQLEXPRESS; Database=RegionDb; Trusted_Connection=True;")
                 .Options;
-            */
+
             IocManager.IocContainer.Register(
-                Component.For<DbContextOptions<MyDbContext>>().Instance(options));
+                Component.For<DbContextOptions<RegionDbContext>>().Instance(options));
         }
 
         public override void Initialize()
@@ -63,25 +58,37 @@ namespace ADC
         }
     }
 
-    public class MyDbContext : AbpDbContext
+    public class RegionDbContext : AbpDbContext
     {
         public DbSet<Region> Region { get; set; }
 
-        public MyDbContext(DbContextOptions<MyDbContext> options) : base(options)
+        public RegionDbContext(DbContextOptions<RegionDbContext> options) : base(options)
         {
         }
     }
 
-    public static class StringExtensions
+    public class MyDbContextContextFactory : IDesignTimeDbContextFactory<RegionDbContext>
     {
-        public static bool Is2Root(this string str)
+        public RegionDbContext CreateDbContext(string[] args)
+        {
+            var options = new DbContextOptionsBuilder<RegionDbContext>()
+                .UseSqlServer("Server=.\\SQLEXPRESS; Database=RegionDb; Trusted_Connection=True;")
+                .Options;
+
+            return new RegionDbContext(options);
+        }
+    }
+
+    public static class DivisionCodeExtensions
+    {
+        public static bool IsProvince(this string str)
         {
             return str.Contains("0000");
         }
 
-        public static bool Is3Root(this string str)
+        public static bool IsCity(this string str)
         {
-            return str.Contains("00") && !str.Is2Root();
+            return str.Contains("00") && !str.IsProvince();
         }
     }
 
@@ -116,90 +123,97 @@ namespace ADC
                 Name = "中国"
             };
 
-            var lastRoot = root;
+            var lastRegion = root;
             regionList.ForEach(region =>
             {
-                var curr = new Region
+                var currentRegion = new Region
                 {
                     Name = region.Name,
                     DivisionCode = region.DivisionCode
                 };
 
-                if (region.DivisionCode.Is2Root())
+                if (region.DivisionCode.IsProvince())
                 {
-                    if (lastRoot.Parent == null)
+                    if (lastRegion.Parent == null)
                     {
-                        if (lastRoot.Children == null)
+                        if (lastRegion.Children == null)
                         {
-                            lastRoot.Children = new List<Region>();
+                            lastRegion.Children = new List<Region>();
                         }
-                        lastRoot.Children.Add(curr);
-                        curr.Parent = lastRoot;
-                        lastRoot = curr;
+                        lastRegion.Children.Add(currentRegion);
+                        currentRegion.Parent = lastRegion;
+                        lastRegion = currentRegion;
                     }
                     else
                     {
-                        lastRoot = lastRoot.DivisionCode.Is3Root() ? lastRoot.Parent.Parent : lastRoot.Parent;
+                        lastRegion = lastRegion.DivisionCode.IsCity() ? lastRegion.Parent.Parent : lastRegion.Parent;
 
-                        curr.Parent = lastRoot;
-                        if (curr.Parent.Children == null)
+                        currentRegion.Parent = lastRegion;
+                        if (currentRegion.Parent.Children == null)
                         {
-                            curr.Parent.Children = new List<Region>();
+                            currentRegion.Parent.Children = new List<Region>();
                         }
-                        curr.Parent.Children.Add(curr);
+                        currentRegion.Parent.Children.Add(currentRegion);
 
-                        lastRoot = curr;
+                        lastRegion = currentRegion;
                     }
                 }
-                else if (region.DivisionCode.Is3Root())
+                else if (region.DivisionCode.IsCity())
                 {
-                    curr.Parent = lastRoot.DivisionCode.Is3Root() ? lastRoot.Parent : lastRoot;
-                    if (curr.Parent.Children == null)
+                    currentRegion.Parent = lastRegion.DivisionCode.IsCity() ? lastRegion.Parent : lastRegion;
+                    if (currentRegion.Parent.Children == null)
                     {
-                        curr.Parent.Children = new List<Region>();
+                        currentRegion.Parent.Children = new List<Region>();
                     }
-                    curr.Parent.Children.Add(curr);
+                    currentRegion.Parent.Children.Add(currentRegion);
 
-                    lastRoot = curr;
+                    lastRegion = currentRegion;
                 }
                 else
                 {
-                    curr.Parent = lastRoot;
-                    if (curr.Parent.Children == null)
+                    currentRegion.Parent = lastRegion;
+                    if (currentRegion.Parent.Children == null)
                     {
-                        curr.Parent.Children = new List<Region>();
+                        currentRegion.Parent.Children = new List<Region>();
                     }
-                    curr.Parent.Children.Add(curr);
+                    currentRegion.Parent.Children.Add(currentRegion);
                 }
             });
 
-            using (var abpBootstrapper = AbpBootstrapper.Create<MyModule>())
+            using (var abpBootstrapper = AbpBootstrapper.Create<RegionModule>())
             {
                 abpBootstrapper.Initialize();
 
                 var unitOfWorkManager = abpBootstrapper.IocManager.Resolve<IUnitOfWorkManager>();
                 var regionRepository = abpBootstrapper.IocManager.Resolve<IRepository<Region, int>>();
+
+                var watch = new Stopwatch();
+                watch.Start();
                 using (var uow = unitOfWorkManager.Begin())
                 {
                     var regionTreeManager = abpBootstrapper.IocManager.Resolve<GeneralTreeManager<Region, int>>();
 
-                    MoreEnumerable.ForEach(root.Children, x =>
+                    root.Children.ForEach(x =>
                     {
+                        //把中国的root去掉
                         x.Parent = null;
+
                         AsyncHelper.RunSync(() => regionTreeManager.BulkCreateAsync(x));
                         unitOfWorkManager.Current.SaveChanges();
                     });
 
                     uow.Complete();
                 }
+                watch.Stop();
 
                 using (var uow = unitOfWorkManager.Begin())
                 {
-                    var regions = regionRepository.GetAll().ToList();
+                    var regions = regionRepository.GetAll().Where(x => x.Level == 1).ToList();
                 }
-            }
 
-            Console.WriteLine("Hello World!");
+                Console.WriteLine(watch.ElapsedMilliseconds / 1000);
+                Console.ReadLine();
+            }
         }
     }
 }

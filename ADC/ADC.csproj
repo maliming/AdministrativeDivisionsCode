@@ -10,6 +10,7 @@
     <PackageReference Include="Abp.GeneralTree" Version="2.2.4" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="2.0.1" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="2.0.1" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="2.0.1" />
     <PackageReference Include="MoreLinq" Version="2.9.0" />
   </ItemGroup>
 
