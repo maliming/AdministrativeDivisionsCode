@@ -1,22 +1,28 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Reflection;
+using System.Text;
 using System.Text.RegularExpressions;
 using Abp;
+using Abp.Application.Services.Dto;
+using Abp.AutoMapper;
 using Abp.Domain.Entities;
 using Abp.Domain.Repositories;
 using Abp.Domain.Uow;
 using Abp.EntityFrameworkCore;
+using Abp.EntityFrameworkCore.Configuration;
 using Abp.GeneralTree;
 using Abp.Modules;
 using Abp.Threading;
-using Castle.MicroKernel.Registration;
+using AutoMapper.QueryableExtensions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using MoreLinq;
+using Newtonsoft.Json;
 
 namespace ADC
 {
@@ -39,17 +45,32 @@ namespace ADC
         public ICollection<Region> Children { get; set; }
     }
 
-    [DependsOn(typeof(AbpEntityFrameworkCoreModule), typeof(GeneralTreeModule))]
+    [AutoMapFrom(typeof(Region))]
+    public class RegionDto : EntityDto<int>, IGeneralTreeDto<RegionDto, int>
+    {
+        public string Name { get; set; }
+
+        public string DivisionCode { get; set; }
+
+        public string FullName { get; set; }
+
+        public int? ParentId { get; set; }
+
+        public ICollection<RegionDto> Children { get; set; }
+    }
+
+    [DependsOn(typeof(AbpEntityFrameworkCoreModule), typeof(AbpAutoMapperModule), typeof(GeneralTreeModule))]
     public class RegionModule : AbpModule
     {
         public override void PreInitialize()
         {
-            var options = new DbContextOptionsBuilder<RegionDbContext>()
-                .UseSqlServer("Server=.\\SQLEXPRESS; Database=RegionDb; Trusted_Connection=True;")
-                .Options;
+            Configuration.DefaultNameOrConnectionString =
+                "Server=.\\SQLEXPRESS; Database=RegionDb; Trusted_Connection=True;";
 
-            IocManager.IocContainer.Register(
-                Component.For<DbContextOptions<RegionDbContext>>().Instance(options));
+            Configuration.Modules.AbpEfCore().AddDbContext<RegionDbContext>(options =>
+            {
+                options.DbContextOptions.UseSqlServer(options.ConnectionString);
+            });
         }
 
         public override void Initialize()
@@ -208,10 +229,14 @@ namespace ADC
 
                 using (var uow = unitOfWorkManager.Begin())
                 {
-                    var regions = regionRepository.GetAll().Where(x => x.Level == 1).ToList();
+                    var regions = regionRepository.GetAll().ProjectTo<RegionDto>().ToList().ToTreeDto<RegionDto, int>();
+                    var json = JsonConvert.SerializeObject(regions, Formatting.Indented);
+                    var file = File.OpenWrite("region.json");
+                    var buffer = Encoding.UTF8.GetBytes(json);
+                    file.Write(buffer, 0, buffer.Length);
                 }
 
-                Console.WriteLine(watch.ElapsedMilliseconds / 1000);
+                //Console.WriteLine(watch.ElapsedMilliseconds / 1000);
                 Console.ReadLine();
             }
         }
